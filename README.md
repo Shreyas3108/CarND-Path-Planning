@@ -284,7 +284,7 @@ The car as seen above is changing the lane.
 
 Here's the milestone accomplishment of more than 4.32 miles as required in the rubrics. 
 
-!(https://raw.githubusercontent.com/Shreyas3108/CarND-Path-Planning/master/Screenshot%20(1304).png)
+![Milestone!](https://raw.githubusercontent.com/Shreyas3108/CarND-Path-Planning/master/Screenshot%20(1304).png)
 
 
 ## Details
