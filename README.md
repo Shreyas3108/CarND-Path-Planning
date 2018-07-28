@@ -54,6 +54,239 @@ the path has processed since last time.
 
 ["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
 
+## Reflection
+
+The car drives well beyond 10 miles. The path planning algorithm is coded on the main.cpp inside the src folder. The code consists of prediction of waypoints that is how car has to switch the lane when a car is ahead while checking the others lane. 
+We can see the code here , 
+
+### 1. Prediction of other cars 
+
+In this part we check whether the other car is in our lane and if in case it is in our lane then we try to switch to other lane , We also check if car is in the other lane or not. We also want to set our speed in case other cars are present in the other lanes and we cannot make the switch. Hence in easier words , We are looking out for the two conditions and code our vehicle to act accodingly , 
+
+1. Check if the car is present in the same lane and if so try to make switch. 
+2. If the car is present in the other lane too then don't switch. In case the speed of the car ahead is slower than ours , We need to slow down. 
+```cpp 
+			//initializing no car is ahead , Here We assume that no car is ahead and the variables value then change depending upon the scenario 
+			// this is very important as the car characterisitic would depend upon this. 
+            bool car_ahead = false;
+            bool car_left = false;
+            bool car_right = false; 
+			
+			//checking for cars in same lane 
+			for(int i = 0 ; i < sensor_fusion.size() ; i++)
+			{
+				float d_coord = sensor_fusion[i][6] ; 
+				int car_init_lane = -1 ;  // Initially we assume that car's aren't present 
+				
+				//defining the lanes through size , as mentioned on the walkthrough each lane has 4 meter length. 
+				// after which , we assume where the cars are. 
+				if(d_coord > 0 && d_coord < 4)
+				{
+					car_init_lane = 0 ; 
+				}
+				else if(d_coord > 4 && d_coord <8) 
+				{
+					car_init_lane = 1 ; 
+				}
+				else if(d_coord > 8 && d_coord < 12) 
+				{
+					car_init_lane = 2 ; 
+				}
+				else  
+				{
+					continue ; 
+				} 
+				
+				// Checking the speed of the other car in order for us to slow down/fasten up. 
+				double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+				double check_car_s = sensor_fusion[i][5];
+                double check_speed = sqrt(pow(vx, 2) + pow(vy, 2));
+				check_car_s += ((double)prev_size*0.02*check_speed); // How far is the other car ? 
+				
+				// defining the car behaviour 
+				//if(car_init_lane = lane) //check car in the same lane
+				//{
+				//	if(check_car_s > car_s && check_car_s - car_s < 30)
+				//	{
+				//		car_ahead = true ; 
+				//	}
+				//}
+				//else if(car_init_lane = lane - 1) // is it on the left ? 
+				//{
+				//	if(car_s - 30 < check_car_s && car_s + 30 > check_car_s)
+				//	{
+				//		car_left = true; 
+				//	}
+				//}
+				//else if(car_init_lane = lane+1) // how about right ? 
+				//{
+				//	if(car_s - 30 < check_car_s && car_s + 30 > check_car_s)
+				//	{
+				//		car_right = true;
+				//	}
+				//} 
+				
+				// Defining the car behaviour and setting the boolean true for cases when the car is ahead and the gap is less than 30 meters  
+				if (car_init_lane == lane) {
+					// Another car is ahead
+					car_ahead |= (check_car_s > car_s) && ((check_car_s - car_s) < 30);
+				} else if (car_init_lane - lane == 1) {
+					// Another car is to the right
+					car_right |= ((car_s - 30) < check_car_s) && ((car_s + 30) > check_car_s);
+				} else if (lane - car_init_lane == 1) {
+					// Another car is to the left
+					car_left |= ((car_s - 30) < check_car_s) && ((car_s + 30) > check_car_s);
+				}
+			}
+         	if(car_ahead) //If car is ahead then , We must chane , This scope helps us do so. We also check if the lane is available or not 
+			{
+				if ( !car_left && lane > 0 ) 
+				{
+                lane--; // Move to the left lane is it's empty  
+				} 
+			  else if ( !car_right && lane != 2 )
+				{
+				lane++; // Move to the right lane if it is empty. 
+				} 
+			  else 
+			  {
+                s_diff -= max_acc; //deaccelerate so that there is no collision 
+              }
+            } 
+			else 
+			{
+
+              if ( lane != 1 ) 
+			  { 
+                if ( ( lane == 0 && !car_right ) || ( lane == 2 && !car_left ) )
+				{
+                  lane = 1; // Back to center.
+                }
+              }
+              if ( ref_vel < max_vel ) 
+			  {
+                s_diff += max_acc; // accelerate if we are far away 
+              }
+			}
+``` 
+
+### 2. Make a trajectory for the car to move. 
+
+We initialize the data from the sensor and create a trajectory which the car would follow , This trajectory would change in case of car which goes without saying. 
+This part depends exactly on the previous calculations , Which helps the car create paths.
+We always won't have the data and in our case if the car hasn't moved for more than 60 meters the system uses the car's current position instead of the previous waypoints. The Frenet helper function crates three points at an interval of 30 meters in front of the car
+We use splines to generate the trajectory, a shift and rotate transform is applied.
+
+We generate 50 waypoints , Since we don't want more waypoints which would be a problem in case of sudden change and neither do we need a smaller waypoint which would hamper the trajectory. Hence the car generates 50 waypoints ahead which helps in the movement of the car in forward direction. 
+
+Here's the code 
+
+```cpp 
+        	vector<double> x_vals;
+          	vector<double> y_vals;
+			double ref_x = car_x;
+            double ref_y = car_y;
+            double ref_yaw = deg2rad(car_yaw); 
+			//Checking for previous data points 
+			if ( prev_size < 2 ) {
+                double prev_car_x = car_x - cos(car_yaw);
+                double prev_car_y = car_y - sin(car_yaw);
+
+                x_vals.push_back(prev_car_x);
+                x_vals.push_back(car_x);
+
+                y_vals.push_back(prev_car_y);
+                y_vals.push_back(car_y);
+
+            } else // use the last two data points. 
+			{
+				
+                ref_x = previous_path_x[prev_size - 1];
+                ref_y = previous_path_y[prev_size - 1];
+
+                double ref_x_prev = previous_path_x[prev_size - 2];
+                double ref_y_prev = previous_path_y[prev_size - 2];
+
+                ref_yaw = atan2(ref_y-ref_y_prev, ref_x-ref_x_prev);
+
+                x_vals.push_back(ref_x_prev);
+                x_vals.push_back(ref_x);
+                y_vals.push_back(ref_y_prev);
+                y_vals.push_back(ref_y);
+            }
+          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+
+			vector<double> wp0_nxt = getXY(car_s + 30, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+			vector<double> wp1_nxt = getXY(car_s + 60, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+			vector<double> wp2_nxt = getXY(car_s + 90, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+
+            x_vals.push_back(wp0_nxt[0]);
+            x_vals.push_back(wp1_nxt[0]);
+            x_vals.push_back(wp2_nxt[0]);
+			
+            y_vals.push_back(wp0_nxt[1]);
+            y_vals.push_back(wp1_nxt[1]);
+            y_vals.push_back(wp2_nxt[1]);
+			// Coordinating the car coordinates
+            for ( int i = 0; i < x_vals.size(); i++ )
+				{
+				double shift_x = x_vals[i] - ref_x;
+				double shift_y = y_vals[i] - ref_y;
+				x_vals[i] = shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw);
+				y_vals[i] = shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw);
+            }
+            // Create the spline.
+            tk::spline s;
+            s.set_points(x_vals , y_vals);
+			 // Output path from previous iterations.
+          	vector<double> next_x_vals;
+          	vector<double> next_y_vals;
+            for ( int i = 0; i < prev_size; i++ ) {
+              next_x_vals.push_back(previous_path_x[i]);
+              next_y_vals.push_back(previous_path_y[i]);
+            }
+            // distance y position
+            double target_x = 30.0;
+            double target_y = s(target_x);
+            double target_dist = sqrt(target_x*target_x + target_y*target_y);
+            double x_add_on = 0;
+            for( int i = 1; i < 50 - prev_size; i++ ) { // 50 way points - Size from prev iteration 
+              ref_vel += s_diff;
+              if ( ref_vel > max_vel ) {
+                ref_vel = max_vel;
+              } else if ( ref_vel < max_acc ) {
+                ref_vel = max_acc;
+              }
+              double N = target_dist/(0.02*ref_vel/2.24);
+              double x_point = x_add_on + target_x/N;
+              double y_point = s(x_point);
+              x_add_on = x_point;
+              double x_ref = x_point;
+              double y_ref = y_point;
+              x_point = x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw);
+              y_point = x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw);
+              x_point += ref_x;
+              y_point += ref_y;
+              next_x_vals.push_back(x_point);
+              next_y_vals.push_back(y_point);
+            }
+```  
+
+## Final Screenshots 
+
+Here's how the lane change works in the simulator , 
+
+!(https://github.com/Shreyas3108/CarND-Path-Planning/blob/master/Screenshot%20(1302).png?raw=true)[Car Changing lane] 
+
+The car as seen above is changing the lane. 
+
+Here's the milestone accomplishment of more than 4.32 miles as required in the rubrics. 
+
+!(https://github.com/Shreyas3108/CarND-Path-Planning/blob/master/Screenshot%20(1304).png?raw=true) 
+
+
 ## Details
 
 1. The car uses a perfect controller and will visit every (x,y) point it recieves in the list every .02 seconds. The units for the (x,y) points are in meters and the spacing of the points determines the speed of the car. The vector going from a point to the next point in the list dictates the angle of the car. Acceleration both in the tangential and normal directions is measured along with the jerk, the rate of change of total Acceleration. The (x,y) point paths that the planner recieves should not have a total acceleration that goes over 10 m/s^2, also the jerk should not go over 50 m/s^3. (NOTE: As this is BETA, these requirements might change. Also currently jerk is over a .02 second interval, it would probably be better to average total acceleration over 1 second and measure jerk from that.
