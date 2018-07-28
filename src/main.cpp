@@ -208,8 +208,8 @@ int main() {
     //auto sdata = string(data).substr(0, length);
     //cout << sdata << endl;
 	
-	int lane = 1 ;
-	double ref_vel = 0.0 ;//mph
+	int lane = 1 ; // Car starts from the middle 
+	double ref_vel = 0.0 ; // reference velocity of the car. The reference velocity is used to increase and decrease based upon the other cars and lane changes 
 	
 	h.onMessage([&lane , &ref_vel , &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -246,22 +246,29 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 			
-			int prev_size = previous_path_x.size() ; 
+			int prev_size = previous_path_x.size() ; //predefined previous path size 
 			
+			
+			// To maintain distance between the car in order to avoid accident/collision
 			if(prev_size > 0) 
 			{
 				car_s = end_path_s ; 
 			}
 			
-			//initializing no car is ahead 
+			//initializing no car is ahead , Here We assume that no car is ahead and the variables value then change depending upon the scenario 
+			// this is very important as the car characterisitic would depend upon this. 
             bool car_ahead = false;
             bool car_left = false;
             bool car_right = false; 
 			
+			//checking for cars in same lane 
 			for(int i = 0 ; i < sensor_fusion.size() ; i++)
 			{
 				float d_coord = sensor_fusion[i][6] ; 
-				int car_init_lane = -1 ; 
+				int car_init_lane = -1 ;  // Initially we assume that car's aren't present 
+				
+				//defining the lanes through size , as mentioned on the walkthrough each lane has 4 meter length. 
+				// after which , we assume where the cars are. 
 				if(d_coord > 0 && d_coord < 4)
 				{
 					car_init_lane = 0 ; 
@@ -277,12 +284,14 @@ int main() {
 				else  
 				{
 					continue ; 
-				}
+				} 
+				
+				// Checking the speed of the other car in order for us to slow down/fasten up. 
 				double vx = sensor_fusion[i][3];
                 double vy = sensor_fusion[i][4];
 				double check_car_s = sensor_fusion[i][5];
                 double check_speed = sqrt(pow(vx, 2) + pow(vy, 2));
-				check_car_s += ((double)prev_size*0.02*check_speed); 
+				check_car_s += ((double)prev_size*0.02*check_speed); // How far is the other car ? 
 				
 				// defining the car behaviour 
 				//if(car_init_lane = lane) //check car in the same lane
@@ -305,7 +314,9 @@ int main() {
 				//	{
 				//		car_right = true;
 				//	}
-				//}
+				//} 
+				
+				// Defining the car behaviour and setting the boolean true for cases when the car is ahead and the gap is less than 30 meters  
 				if (car_init_lane == lane) {
 					// Another car is ahead
 					car_ahead |= (check_car_s > car_s) && ((check_car_s - car_s) < 30);
@@ -322,19 +333,19 @@ int main() {
             const double max_vel = 49.5;
             const double max_acc = .224;
 			
-			if(car_ahead) //in case car is ahead 
+			if(car_ahead) //If car is ahead then , We must chane , This scope helps us do so. We also check if the lane is available or not 
 			{
 				if ( !car_left && lane > 0 ) 
 				{
-                lane--; // Left lane if empty and lane available 
+                lane--; // Move to the left lane is it's empty  
 				} 
 			  else if ( !car_right && lane != 2 )
 				{
-				lane++; // Right lane if empty and lane available 
+				lane++; // Move to the right lane if it is empty. 
 				} 
 			  else 
 			  {
-                s_diff -= max_acc;
+                s_diff -= max_acc; //deaccelerate so that there is no collision 
               }
             } 
 			else 
@@ -349,7 +360,7 @@ int main() {
               }
               if ( ref_vel < max_vel ) 
 			  {
-                s_diff += max_acc;
+                s_diff += max_acc; // accelerate if we are far away 
               }
 			}
 
@@ -358,7 +369,7 @@ int main() {
 			double ref_x = car_x;
             double ref_y = car_y;
             double ref_yaw = deg2rad(car_yaw); 
-			
+			//Checking for previous data points 
 			if ( prev_size < 2 ) {
                 double prev_car_x = car_x - cos(car_yaw);
                 double prev_car_y = car_y - sin(car_yaw);
@@ -369,7 +380,7 @@ int main() {
                 y_vals.push_back(prev_car_y);
                 y_vals.push_back(car_y);
 
-            } else 
+            } else // use the last two data points. 
 			{
 				
                 ref_x = previous_path_x[prev_size - 1];
@@ -410,14 +421,14 @@ int main() {
             // Create the spline.
             tk::spline s;
             s.set_points(x_vals , y_vals);
-			 // Output path points from previous path for continuity.
+			 // Output path from previous iterations.
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
             for ( int i = 0; i < prev_size; i++ ) {
               next_x_vals.push_back(previous_path_x[i]);
               next_y_vals.push_back(previous_path_y[i]);
             }
-            // Calculate distance y position on 30 m ahead.
+            // distance y position
             double target_x = 30.0;
             double target_y = s(target_x);
             double target_dist = sqrt(target_x*target_x + target_y*target_y);
