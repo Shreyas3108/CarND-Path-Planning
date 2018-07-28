@@ -278,13 +278,13 @@ Here's the code
 
 Here's how the lane change works in the simulator , 
 
-!(https://github.com/Shreyas3108/CarND-Path-Planning/blob/master/Screenshot%20(1302).png?raw=true)[Car Changing lane] 
+![https://github.com/Shreyas3108/CarND-Path-Planning/blob/master/Screenshot%20(1302).png?raw=true](Car Changing lane) 
 
 The car as seen above is changing the lane. 
 
 Here's the milestone accomplishment of more than 4.32 miles as required in the rubrics. 
 
-!(https://github.com/Shreyas3108/CarND-Path-Planning/blob/master/Screenshot%20(1304).png?raw=true) 
+![https://github.com/Shreyas3108/CarND-Path-Planning/blob/master/Screenshot%20(1304).png?raw=true]
 
 
 ## Details
